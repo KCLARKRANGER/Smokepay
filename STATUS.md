@@ -1,10 +1,10 @@
 # SmokePay build status
 
-Last updated: 2026-11-17, 6:10 pm
+Last updated: 2026-11-17, 6:20 pm
 
 ## Where the build stands
 
-The app is built, tested and merged to `main`. The database is live. The app is not on Vercel yet: the Vercel project needs Ken to import the repo. Customer checkout stays closed until a payment partner is connected. Nothing in this code pretends to move money.
+The app is built, tested and merged to `main`. The database is live. Ken imported the repo into Vercel (project `smokepay`, address https://smokepay-ken-clarks-projects.vercel.app). It needs one secret pasted and one protection setting changed before it works. Customer checkout stays closed until a payment partner is connected. Nothing in this code pretends to move money.
 
 | Piece | State |
 | --- | --- |
@@ -16,26 +16,28 @@ The app is built, tested and merged to `main`. The database is live. The app is 
 | Checks | 25 tests passing, type check clean, production build clean |
 | Supabase project `smokepay` (ref `yfzomvtthwmjzohymsio`, US East) | Live. Migrations 0001 to 0003 applied. Security advisor: one intentional note (partner events are server-only) |
 | Test store and owner invite | Created: `SmokePay Test Store`, owner invite for `clark@smokealarm.io` waiting for that login |
-| Vercel project | Not created: Claude's Vercel connection is refused project creation |
+| Vercel project `smokepay` | Created by Ken, deploying from `main`. Claude's Vercel connection can read it but cannot change settings or add variables |
 | Payment partner adapter | Not built: needs a signed partner and sandbox credentials |
 | POS and Metrc reconciliation feed | Not started |
 
 ## What Ken needs to do next
 
-1. **Import the repo into Vercel.** In Vercel, open the team that holds `auditshield`. Choose Add New, then Project, and import `KCLARKRANGER/Smokepay`. If the repo is not listed, adjust the Vercel GitHub app so it can see that repo. Deploy with the default settings. Claude's Vercel connection is refused project creation, so this step is yours.
-2. **Connect the database.** In the new `smokepay` Vercel project, open the Storage tab and connect the existing Supabase database `smokepay`. This writes the Supabase address and keys, including the server key, into the project. If it is not offered there, open Supabase, then the `smokepay` project, Project Settings, API, copy the `service_role` key, and add it in Vercel as `SUPABASE_SERVICE_ROLE_KEY` marked Sensitive.
-3. **Tell Claude.** Claude adds `APP_BASE_URL` and `CRON_SECRET` (or gives you the values to paste if Vercel refuses), redeploys, and checks `/api/health`.
-4. **Create your login.** In Supabase, open Authentication, then Users, choose Add user, then Create new user. Use `clark@smokealarm.io`, set your own password, and tick Auto Confirm. You become owner of the test store automatically.
+1. **Paste the server key.** In Supabase, open the `smokepay` project, then Project Settings, then API Keys. Copy the `service_role` key (or a secret key starting `sb_secret_`). In Vercel, open the `smokepay` project, Settings, Environment Variables, and add `SUPABASE_SERVICE_ROLE_KEY` with that value, marked Sensitive, for Production and Preview.
+2. **Make the production address public.** In Vercel, open `smokepay`, Settings, Deployment Protection. Change Vercel Authentication to Standard Protection, which keeps preview builds private and leaves the production address open. Customers and payment partners cannot reach the pay page or webhooks while Vercel's login wall is in front of it.
+3. **Optional: `CRON_SECRET`.** Add it with any long random string so the nightly job can close expired links. Links still expire without it.
+4. **Redeploy.** In Vercel, open Deployments and redeploy the latest production deployment so it picks up the new key.
+5. **Create your login.** In Supabase, open Authentication, then Users, choose Add user, then Create new user. Use `clark@smokealarm.io`, set your own password, and tick Auto Confirm. You become owner of the test store automatically.
+6. **Tell Claude.** Claude checks `/api/health`, confirms the database answers, and walks the register flow with you.
 
 ## Settings the app reads
 
 | Setting | Required | Set by |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`) | Yes | Supabase connection, or Claude |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) | Yes | Supabase connection, or Claude |
-| `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) | Yes, keep secret | Supabase connection, or Ken |
-| `APP_BASE_URL` | Yes | Claude |
-| `CRON_SECRET` | Yes | Claude |
+| `NEXT_PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`) | No, built into the code (`src/lib/public-config.ts`) | Override only |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) | No, the public key is built into the code | Override only |
+| `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) | Yes, keep secret | Ken |
+| `APP_BASE_URL` | No, falls back to Vercel's production address | Only for a custom domain later |
+| `CRON_SECRET` | Optional | Ken |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Only for texting links | Ken, once a Twilio account exists |
 
 ## First store (already run on 2026-11-17)

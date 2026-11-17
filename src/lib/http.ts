@@ -13,6 +13,9 @@ export function ok<T>(body: T, status = 200) {
 export function baseUrl(req: Request): string {
   const fixed = env('APP_BASE_URL');
   if (fixed) return fixed.replace(/\/+$/, '');
+  // Vercel sets this automatically to the project's production address.
+  const vercelProd = env('VERCEL_PROJECT_PRODUCTION_URL');
+  if (vercelProd && env('VERCEL_ENV') === 'production') return `https://${vercelProd}`;
   const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
   const proto = req.headers.get('x-forwarded-proto') ?? 'https';
   return `${proto}://${host}`;
