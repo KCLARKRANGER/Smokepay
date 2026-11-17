@@ -54,9 +54,19 @@ select s.id, u.id, 'owner' from s, auth.users u where u.email = 'you@example.com
 - The customer link holds a random token. Only its hash is stored. Links expire after 15 minutes.
 - SmokePay never sees or stores card or bank details, and never holds customer funds.
 
+## What Flowhub's Mobile Pay demo shows (reviewed 2026-11-17)
+
+- Cashier taps Mobile Pay, enters the customer's phone number, and texts a link. The register waits with a Cancel button.
+- The text comes from a toll-free number with neutral wording and a link hosted on Flowhub's own address.
+- The customer sees the store name, amount due and an Apple Pay button, and pays with a debit card in the wallet.
+- The customer's confirmation reads "Funds loaded", not "Payment complete". That points to a stored-value design: the card loads money into an account for the customer and the store is paid from that account. This is an inference from the demo's wording.
+- No processor or bank is named anywhere in the demo.
+
+Impact on this build: the partner to find is a stored-value program that underwrites cannabis and holds the funds under its own license. When its event model is known, payment sessions get a "funds loaded" step before "paid", and refunds may return to the customer's balance instead of the card.
+
 ## Open items before a live sale
 
-- Which partner and rail (Pay by Bank, card wallet, or both), approved in writing.
+- Which partner and rail (Pay by Bank, stored-value wallet funded by card, or both), approved in writing.
 - Cannabis payments counsel sign-off: merchant of record, fee disclosure, New York requirements.
 - Text messaging registration. Carriers filter cannabis wording, so messages stay neutral.
 - Pilot store, its POS, and its bank's approval of the partner.
