@@ -1,47 +1,50 @@
 # SmokePay build status
 
-Last updated: 2026-11-17
+Last updated: 2026-11-17, 6:10 pm
 
 ## Where the build stands
 
-The foundation is built and tested. Customer checkout is closed until a payment partner is connected. Nothing in this code pretends to move money.
+The app is built, tested and merged to `main`. The database is live. The app is not on Vercel yet: the Vercel project needs Ken to import the repo. Customer checkout stays closed until a payment partner is connected. Nothing in this code pretends to move money.
 
 | Piece | State |
 | --- | --- |
-| Database schema, money rules, row-level security | Built, 14 database tests passing |
-| Staff sign in | Built (Supabase email and password) |
-| Register screen: create link, QR code, text link, live status, cancel, refund | Built |
-| Customer pay page | Built, hands off to the partner's secure page |
-| Partner webhook intake with signature check and repeat protection | Built |
-| Payment partner adapter | Not built. Needs a signed partner and sandbox credentials |
-| Supabase project | Not created |
-| Vercel deployment | Not connected |
+| Database schema, money rules, row-level security | Built, merged |
+| Staff sign in, register screen (link, QR, text, live status, cancel, refund) | Built, merged |
+| Staff access: owners and managers add staff by email | Built |
+| Customer pay page, signed partner webhook intake | Built, merged |
+| Health check at `/api/health` (shows which settings are present, never their values) | Built |
+| Checks | 25 tests passing, type check clean, production build clean |
+| Supabase project `smokepay` (ref `yfzomvtthwmjzohymsio`, US East) | Live. Migrations 0001 to 0003 applied. Security advisor: one intentional note (partner events are server-only) |
+| Test store and owner invite | Created: `SmokePay Test Store`, owner invite for `clark@smokealarm.io` waiting for that login |
+| Vercel project | Not created: Claude's Vercel connection is refused project creation |
+| Payment partner adapter | Not built: needs a signed partner and sandbox credentials |
 | POS and Metrc reconciliation feed | Not started |
 
 ## What Ken needs to do next
 
-1. Merge the pull request for branch `claude/smokepay-foundation` into `main`.
-2. Supabase: create a project named `smokepay` (or name an existing one). Run `supabase/migrations/0001_smokepay_core.sql` in the SQL editor.
-3. Vercel: import `KCLARKRANGER/Smokepay` and add these environment variables from `.env.example`:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `APP_BASE_URL` (the Vercel address, for example `https://smokepay.vercel.app`)
-   - `CRON_SECRET` (any long random string)
-   - Optional for texting: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
-4. Supabase Authentication: add a user for yourself (email and password). Then run the SQL in "First store" below.
-5. Payment partner: obtain written approval and sandbox credentials. Send the API documentation link plus the key, secret, merchant ID and webhook signing secret.
+1. **Import the repo into Vercel.** In Vercel, open the team that holds `auditshield`. Choose Add New, then Project, and import `KCLARKRANGER/Smokepay`. If the repo is not listed, adjust the Vercel GitHub app so it can see that repo. Deploy with the default settings. Claude's Vercel connection is refused project creation, so this step is yours.
+2. **Connect the database.** In the new `smokepay` Vercel project, open the Storage tab and connect the existing Supabase database `smokepay`. This writes the Supabase address and keys, including the server key, into the project. If it is not offered there, open Supabase, then the `smokepay` project, Project Settings, API, copy the `service_role` key, and add it in Vercel as `SUPABASE_SERVICE_ROLE_KEY` marked Sensitive.
+3. **Tell Claude.** Claude adds `APP_BASE_URL` and `CRON_SECRET` (or gives you the values to paste if Vercel refuses), redeploys, and checks `/api/health`.
+4. **Create your login.** In Supabase, open Authentication, then Users, choose Add user, then Create new user. Use `clark@smokealarm.io`, set your own password, and tick Auto Confirm. You become owner of the test store automatically.
 
-## First store
+## Settings the app reads
 
-Replace the email, then run in the Supabase SQL editor:
+| Setting | Required | Set by |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`) | Yes | Supabase connection, or Claude |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) | Yes | Supabase connection, or Claude |
+| `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEY`) | Yes, keep secret | Supabase connection, or Ken |
+| `APP_BASE_URL` | Yes | Claude |
+| `CRON_SECRET` | Yes | Claude |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Only for texting links | Ken, once a Twilio account exists |
+
+## First store (already run on 2026-11-17)
 
 ```sql
 with s as (
-  insert into stores (name) values ('Pilot Store') returning id
+  insert into stores (name) values ('SmokePay Test Store') returning id
 )
-insert into store_members (store_id, user_id, role)
-select s.id, u.id, 'owner' from s, auth.users u where u.email = 'you@example.com';
+select sp_invite(s.id, null, 'clark@smokealarm.io', 'owner') from s;
 ```
 
 ## How money is protected

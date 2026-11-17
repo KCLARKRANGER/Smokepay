@@ -5,17 +5,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 // Runs the real migration against an in-process Postgres so the money rules
 // are tested exactly as the database will enforce them.
-const migration = readFileSync(
-  join(__dirname, '..', 'supabase', 'migrations', '0001_smokepay_core.sql'),
-  'utf8',
+const migrations = ['0001_smokepay_core.sql', '0002_store_invites.sql', '0003_security_hardening.sql'].map((f) =>
+  readFileSync(join(__dirname, '..', 'supabase', 'migrations', f), 'utf8'),
 );
 
 // What Supabase provides out of the box and the migration relies on.
 const supabasePrelude = `
   create role anon; create role authenticated; create role service_role;
   create schema auth;
+  create table auth.users (id uuid primary key, email text);
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+  grant usage on schema auth to anon, authenticated, service_role;
+  grant execute on function auth.uid() to anon, authenticated, service_role;
 `;
 
 const OWNER = '00000000-0000-0000-0000-0000000000a1';
@@ -48,7 +50,7 @@ async function payFor(sessionId: string, ref: string, amount: number, eventId = 
 beforeEach(async () => {
   db = new PGlite();
   await db.exec(supabasePrelude);
-  await db.exec(migration);
+  for (const m of migrations) await db.exec(m);
   const s = await one<{ id: string }>(`insert into stores (name) values ('Test Store') returning id`);
   storeId = s.id;
   await db.query(
@@ -228,5 +230,52 @@ describe('row-level security', () => {
     const none = await db.query(`select id from payment_sessions`);
     expect(none.rows.length).toBe(0);
     await db.exec(`reset role;`);
+  });
+});
+
+describe('staff invites', () => {
+  const NEW_USER = '00000000-0000-0000-0000-0000000000b1';
+
+  it('links an invited email when that account is created', async () => {
+    await db.query(`select sp_invite($1, $2, 'New.Hire@Example.com', 'cashier')`, [storeId, OWNER]);
+    let m = await db.query<{ role: string }>(`select role from store_members where user_id = $1`, [NEW_USER]);
+    expect(m.rows.length).toBe(0);
+    await db.query(`insert into auth.users (id, email) values ($1, 'new.hire@example.com')`, [NEW_USER]);
+    m = await db.query<{ role: string }>(`select role from store_members where user_id = $1`, [NEW_USER]);
+    expect(m.rows[0]?.role).toBe('cashier');
+    const inv = await one<{ accepted_at: string | null }>(`select accepted_at from store_invites where email = 'new.hire@example.com'`);
+    expect(inv.accepted_at).not.toBeNull();
+  });
+
+  it('links an existing account immediately', async () => {
+    await db.query(`insert into auth.users (id, email) values ($1, 'existing@example.com')`, [NEW_USER]);
+    const inv = await one<{ accepted_at: string | null }>(
+      `select * from sp_invite($1, $2, 'existing@example.com', 'manager')`, [storeId, OWNER]);
+    expect(inv.accepted_at).not.toBeNull();
+    const m = await one<{ role: string }>(`select role from store_members where user_id = $1`, [NEW_USER]);
+    expect(m.role).toBe('manager');
+  });
+
+  it('lets only owners and managers invite, and stops managers making owners', async () => {
+    await expect(
+      db.query(`select sp_invite($1, $2, 'x@example.com', 'cashier')`, [storeId, CASHIER]),
+    ).rejects.toThrow(/not_allowed/);
+    await expect(
+      db.query(`select sp_invite($1, $2, 'x@example.com', 'cashier')`, [storeId, STRANGER]),
+    ).rejects.toThrow(/not_allowed/);
+    await db.query(`select sp_invite($1, $2, 'mgr@example.com', 'manager')`, [storeId, OWNER]);
+    const MGR = '00000000-0000-0000-0000-0000000000b2';
+    await db.query(`insert into auth.users (id, email) values ($1, 'mgr@example.com')`, [MGR]);
+    await expect(
+      db.query(`select sp_invite($1, $2, 'boss@example.com', 'owner')`, [storeId, MGR]),
+    ).rejects.toThrow(/not_allowed/);
+    const ok = await one<{ role: string }>(`select * from sp_invite($1, $2, 'till@example.com', 'cashier')`, [storeId, MGR]);
+    expect(ok.role).toBe('cashier');
+  });
+
+  it('lets the server bootstrap the first owner with no acting user', async () => {
+    const s2 = await one<{ id: string }>(`insert into stores (name) values ('Second') returning id`);
+    const inv = await one<{ role: string }>(`select * from sp_invite($1, null, 'founder@example.com', 'owner')`, [s2.id]);
+    expect(inv.role).toBe('owner');
   });
 });

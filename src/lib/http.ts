@@ -21,6 +21,7 @@ export function baseUrl(req: Request): string {
 const KNOWN = [
   'not_a_member', 'not_allowed', 'session_not_found', 'session_not_open', 'session_expired',
   'session_not_cancelable', 'session_not_refundable', 'refund_exceeds_payment', 'invalid_ttl',
+  'invalid_email',
 ] as const;
 
 /** Maps a database function error to a stable code and HTTP status. */

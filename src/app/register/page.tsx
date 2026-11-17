@@ -21,6 +21,7 @@ type Session = {
   customer_phone_last4: string | null;
   created_at: string;
 };
+type Invite = { email: string; role: string; created_at: string; accepted_at: string | null };
 type Active = { session: Session; payUrl: string | null; qr: string | null; sms: string };
 
 const CHECKOUT_NOTE: Record<Exclude<Store['checkout'], 'ready'>, string> = {
@@ -53,6 +54,10 @@ export default function RegisterPage() {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [refundNote, setRefundNote] = useState('');
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'manager' | 'cashier'>('cashier');
+  const [inviteNote, setInviteNote] = useState('');
   const createKey = useRef<string | null>(null);
   const refundKey = useRef<string | null>(null);
 
@@ -80,9 +85,19 @@ export default function RegisterPage() {
     })();
   }, []);
 
+  const loadInvites = useCallback(async (id: string) => {
+    const res = await fetch(`/api/stores/${id}/invites`, { cache: 'no-store' });
+    if (res.ok) setInvites((await res.json()).invites);
+  }, []);
+
   useEffect(() => {
     if (storeId) loadRecent(storeId);
   }, [storeId, loadRecent]);
+
+  const isManager = store?.role === 'owner' || store?.role === 'manager';
+  useEffect(() => {
+    if (storeId && isManager) loadInvites(storeId);
+  }, [storeId, isManager, loadInvites]);
 
   // Watch the active payment until it finishes.
   const activeId = active?.session.id;
@@ -190,12 +205,34 @@ export default function RegisterPage() {
     loadRecent(storeId);
   }
 
+  async function submitInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteNote('');
+    const res = await fetch(`/api/stores/${storeId}/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+    });
+    if (!res.ok) {
+      setInviteNote(res.status === 403 ? 'Only an owner or manager can add staff.' : 'Check the email address and try again.');
+      return;
+    }
+    const { invite } = await res.json();
+    setInviteNote(
+      invite.accepted_at
+        ? `${invite.email} already had an account and now has access.`
+        : `${invite.email} gets access as soon as their account is created with that email.`,
+    );
+    setInviteEmail('');
+    loadInvites(storeId);
+  }
+
   async function signOut() {
     await browserClient().auth.signOut();
     window.location.assign('/login');
   }
 
-  const canRefund = store?.role === 'owner' || store?.role === 'manager';
+  const canRefund = isManager;
   const waiting = active && (active.session.status === 'open' || active.session.status === 'processing');
 
   return (
@@ -353,6 +390,53 @@ export default function RegisterPage() {
                 </form>
               )}
             </section>
+
+            {isManager && (
+              <section className="card" style={{ marginTop: 16 }} aria-labelledby="staff-h">
+                <h2 id="staff-h">Staff access</h2>
+                <form onSubmit={submitInvite}>
+                  <div className="grid two">
+                    <div className="field">
+                      <label htmlFor="invite-email">Staff email</label>
+                      <input id="invite-email" type="email" required autoComplete="off" value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="invite-role">Role</label>
+                      <select id="invite-role" value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value as 'manager' | 'cashier')}>
+                        <option value="cashier">Cashier: takes payments</option>
+                        <option value="manager">Manager: also refunds and adds staff</option>
+                      </select>
+                    </div>
+                  </div>
+                  {inviteNote && <div className="notice good" role="status">{inviteNote}</div>}
+                  <button type="submit">Add staff</button>
+                </form>
+                {invites.length > 0 && (
+                  <div className="scroll" style={{ marginTop: 16 }}>
+                    <table>
+                      <thead>
+                        <tr><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th></tr>
+                      </thead>
+                      <tbody>
+                        {invites.map((i) => (
+                          <tr key={i.email}>
+                            <td className="break">{i.email}</td>
+                            <td>{i.role}</td>
+                            <td>
+                              <span className={`pill ${i.accepted_at ? '' : 'wait'}`}>
+                                {i.accepted_at ? 'Active' : 'Waiting for account'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
       </main>
